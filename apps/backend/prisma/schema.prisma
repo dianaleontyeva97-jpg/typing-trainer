@@ -1,0 +1,457 @@
+// =============================================================================
+// schema.prisma
+// Typing Trainer — схема `app`
+//
+// Источник требований: DATABASE_SPECIFICATION v1.2
+// Схема PostgreSQL: app
+//
+// АРХИТЕКТУРНЫЕ ПРАВИЛА (DATABASE_SPECIFICATION §1.3, §5.4)
+// ─────────────────────────────────────────────────────────
+// 1. Soft references на схему `content` (Directus):
+//      text_id, lesson_id, course_id, preferred_language_id
+//    → хранятся как plain UUID String, БЕЗ FK-constraint.
+//    → целостность проверяется на уровне приложения (Backend).
+//
+// 2. IMMUTABLE после INSERT (UPDATE/DELETE запрещены в коде приложения):
+//      KeystrokeEvent, Certificate, Achievement
+//
+// 3. APPEND-ONLY (повторное действие = новая запись, не UPDATE):
+//      EventLog, LessonAttempt
+//
+// 4. Мутируемое состояние (разрешён UPDATE только указанных полей):
+//      TypingSession → status, ended_at, cpm, accuracy
+//      Subscription  → status, ended_at
+//
+// 5. Правило onDelete:
+//      • Cascade  — дочерние данные не имеют смысла без родителя
+//      • Restrict — дочерние данные нельзя потерять (LessonAttempt при удалении сессии)
+//      • SetNull  — исторические события сохраняются даже после удаления родителя
+// =============================================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+  schemas   = ["app"]
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+/// Ролевая модель пользователя.
+/// PROJECT_VISION §13: user | premium | admin, расширяема.
+/// ВАЖНО: role синхронизируется с Subscription на уровне бизнес-логики,
+/// не через DB-constraint (DATABASE_SPECIFICATION §2.7).
+enum UserRole {
+  user
+  premium
+  admin
+
+  @@schema("app")
+}
+
+/// Тип сессии печати.
+/// API_SPECIFICATION v1.2, Session API: Critical Rule —
+/// learning НЕ может быть создан анонимно (user_id обязателен).
+enum SessionType {
+  guest
+  learning
+
+  @@schema("app")
+}
+
+/// Жизненный цикл сессии печати.
+enum SessionStatus {
+  active
+  completed
+  abandoned
+
+  @@schema("app")
+}
+
+/// Тариф подписки. Расширяем без breaking change (PROJECT_VISION §13).
+enum SubscriptionPlan {
+  free
+  premium
+
+  @@schema("app")
+}
+
+/// Статус подписки.
+enum SubscriptionStatus {
+  active
+  canceled
+  expired
+
+  @@schema("app")
+}
+
+/// Канонические события аналитической системы.
+/// ANALYTICS_SPECIFICATION v1.0 §2.2 + SYSTEM_ARCHITECTURE v1.0.
+/// Семантика событий закрыта: изменение = новая версия ANALYTICS_SPECIFICATION.
+///
+/// Обязательный payload_json по типу:
+///   start_session        → { session_id, session_type, text_id }
+///   end_session          → { session_id, cpm, accuracy, duration_ms }
+///   lesson_started       → { lesson_id, course_id, session_id }
+///   lesson_completed     → { lesson_id, lesson_attempt_id, is_passed, cpm, accuracy }
+///   certificate_issued   → { course_id, certificate_id }
+///   achievement_unlocked → { achievement_id }
+enum EventType {
+  start_session
+  end_session
+  lesson_started
+  lesson_completed
+  certificate_issued
+  achievement_unlocked
+
+  @@schema("app")
+}
+
+// =============================================================================
+// MODELS
+// =============================================================================
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+
+/// Аккаунт пользователя.
+///
+/// Правила:
+/// • Информация о подписке — только в Subscription (NOT здесь).
+/// • role — часть авторизационной модели, не биллинговой.
+/// • preferred_language_id — soft ref → content.Language.id (без FK).
+model User {
+  id            String   @id @default(uuid()) @db.Uuid
+  email         String   @unique
+  nickname      String
+
+  /// bcrypt / argon2. Только необратимый алгоритм хеширования.
+  passwordHash  String   @map("password_hash")
+  emailVerified Boolean  @default(false) @map("email_verified")
+  role          UserRole @default(user)
+
+  /// Soft ref → content.Language.id (без FK-constraint)
+  preferredLanguageId String? @map("preferred_language_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  sessions       TypingSession[]
+  lessonAttempts LessonAttempt[]
+  certificates   Certificate[]
+  achievements   Achievement[]
+  subscriptions  Subscription[]
+  eventLogs      EventLog[]
+
+  // Indexes (DATABASE_SPECIFICATION §4 — User)
+  // email покрыт @unique выше
+  @@index([preferredLanguageId])
+  @@map("users")
+  @@schema("app")
+}
+
+// ─── TypingSession ────────────────────────────────────────────────────────────
+
+/// Сессия печати (guest или learning).
+///
+/// Правила:
+/// • user_id NOT NULL при session_type = learning (Critical Rule,
+///   API_SPECIFICATION v1.2).
+/// • lesson_id NOT NULL при session_type = learning — нужен для
+///   создания LessonAttempt при завершении сессии.
+/// • cpm и accuracy — финальные значения, рассчитанные Backend из
+///   KeystrokeEvent (ANALYTICS_SPECIFICATION §3.1–3.2). NULL до завершения.
+/// • text_id, lesson_id — soft ref → content-схема (без FK).
+///
+/// Мутируемые поля: status, ended_at, cpm, accuracy.
+/// Неизменяемые после создания: user_id, session_type, text_id, lesson_id.
+model TypingSession {
+  id          String        @id @default(uuid()) @db.Uuid
+  userId      String?       @map("user_id") @db.Uuid
+  sessionType SessionType   @map("session_type")
+  status      SessionStatus @default(active)
+
+  /// Soft ref → content.TypingText.id
+  textId   String  @map("text_id") @db.Uuid
+
+  /// Soft ref → content.Lesson.id
+  /// NULL для guest, NOT NULL для learning (проверка в бизнес-логике Backend).
+  lessonId String? @map("lesson_id") @db.Uuid
+
+  startedAt DateTime  @default(now()) @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+
+  /// Финальный CPM, рассчитанный из KeystrokeEvent.
+  /// Формула: correct_chars / (duration_ms / 60_000)
+  cpm Float?
+
+  /// Финальная точность [0.0 – 1.0].
+  /// Формула: correct_chars / total_typed_chars
+  accuracy Float?
+
+  // Relations
+  user          User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  keystrokes    KeystrokeEvent[]
+  lessonAttempt LessonAttempt?
+  eventLogs     EventLog[]
+
+  // Indexes (DATABASE_SPECIFICATION §4 — TypingSession)
+  @@index([userId])
+  @@index([textId])
+  @@index([startedAt])
+  @@index([userId, sessionType])
+  @@map("typing_sessions")
+  @@schema("app")
+}
+
+// ─── KeystrokeEvent ───────────────────────────────────────────────────────────
+
+/// Первичный источник данных системы. IMMUTABLE после INSERT.
+///
+/// PROJECT_VISION §8, DATABASE_SPECIFICATION §2.3, §5.4:
+/// • UPDATE / DELETE запрещены на уровне кода приложения.
+/// • textId денормализован для аналитических запросов без JOIN с session.
+/// • Сравнение — char-level Unicode, без keycodes (PROJECT_VISION §7).
+/// • Все метрики (CPM, Accuracy, Error Rate) воспроизводимы из этой таблицы.
+///
+/// onDelete: Cascade — keystroke не существует без сессии.
+model KeystrokeEvent {
+  id        String @id @default(uuid()) @db.Uuid
+  sessionId String @map("session_id") @db.Uuid
+
+  /// Soft ref → content.TypingText.id (денормализовано для аналитики)
+  textId String @map("text_id") @db.Uuid
+
+  /// Позиция символа в тексте (0-based)
+  positionIndex Int @map("position_index")
+
+  /// Ожидаемый Unicode-символ (NFC-нормализованный)
+  expectedChar String @map("expected_char")
+
+  /// Введённый пользователем Unicode-символ (NFC-нормализованный)
+  typedChar String @map("typed_char")
+
+  /// Момент нажатия клавиши, UTC (Timestamptz для корректного хранения timezone)
+  timestamp DateTime @db.Timestamptz
+
+  /// Время реакции от предыдущего keystroke (мс). База для Reaction Time аналитики.
+  reactionTimeMs Int @map("reaction_time_ms")
+
+  /// Результат сравнения: normalize(expectedChar) == normalize(typedChar)
+  isCorrect Boolean @map("is_correct")
+
+  // Relations
+  session TypingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  // Indexes (DATABASE_SPECIFICATION §4 — KeystrokeEvent)
+  @@index([sessionId])
+  @@index([timestamp])
+  @@index([positionIndex])
+  @@index([sessionId, positionIndex])
+  @@map("keystroke_events")
+  @@schema("app")
+}
+
+// ─── LessonAttempt ────────────────────────────────────────────────────────────
+
+/// Результат одной попытки прохождения урока. APPEND-ONLY.
+///
+/// COURSE_SPECIFICATION §3.2: каждая попытка — отдельная запись.
+/// UPDATE / DELETE запрещены в коде приложения.
+///
+/// is_passed = (cpm >= lesson.target_cpm) AND (accuracy >= lesson.target_accuracy)
+/// Значения target_cpm / target_accuracy читаются из content.Lesson.
+///
+/// lessonId — soft ref → content.Lesson.id (без FK).
+///
+/// onDelete (session): Restrict — нельзя удалить TypingSession,
+/// если для неё уже создана LessonAttempt (защита исторических данных).
+model LessonAttempt {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  /// Soft ref → content.Lesson.id
+  lessonId String @map("lesson_id") @db.Uuid
+
+  /// 1:1 с TypingSession (уникальность гарантирует @unique)
+  sessionId String @unique @map("session_id") @db.Uuid
+
+  /// Финальный CPM (подтверждён Backend из KeystrokeEvent)
+  cpm Float
+
+  /// Финальная точность [0.0 – 1.0] (подтверждена Backend)
+  accuracy Float
+
+  /// cpm >= lesson.target_cpm AND accuracy >= lesson.target_accuracy
+  isPassed Boolean @map("is_passed")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session   TypingSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  eventLogs EventLog[]
+
+  // Indexes (DATABASE_SPECIFICATION §4 — LessonAttempt)
+  @@index([userId])
+  @@index([lessonId])
+  // Для определения статуса разблокировки уроков (COURSE_SPECIFICATION §3.3)
+  @@index([userId, lessonId, createdAt])
+  @@map("lesson_attempts")
+  @@schema("app")
+}
+
+// ─── Certificate ──────────────────────────────────────────────────────────────
+
+/// Сертификат, выданный пользователю за завершение курса. IMMUTABLE после INSERT.
+///
+/// COURSE_SPECIFICATION §6:
+/// • Условия: курс завершён + cpm/accuracy >= course.certificate_config.
+/// • Повторная выдача = новая запись, НЕ UPDATE существующей.
+/// • Создание ВСЕГДА сопровождается EventLog { event_type: certificate_issued }.
+///
+/// courseId — soft ref → content.Course.id (без FK).
+/// fileUrl  — URL сгенерированного PDF (PROJECT_VISION §12).
+model Certificate {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  /// Soft ref → content.Course.id
+  courseId String @map("course_id") @db.Uuid
+
+  issuedAt DateTime @default(now()) @map("issued_at")
+
+  /// CPM пользователя на момент выдачи (воспроизводим из EventLog)
+  cpmAtIssue Float @map("cpm_at_issue")
+
+  /// Точность [0.0 – 1.0] на момент выдачи
+  accuracyAtIssue Float @map("accuracy_at_issue")
+
+  /// URL сгенерированного PDF-сертификата
+  fileUrl String @map("file_url")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes (DATABASE_SPECIFICATION §4 — Certificate)
+  @@index([userId])
+  @@index([courseId])
+  @@index([userId, courseId])
+  @@map("certificates")
+  @@schema("app")
+}
+
+// ─── Achievement ──────────────────────────────────────────────────────────────
+
+/// Разблокированное достижение пользователя. IMMUTABLE после INSERT.
+///
+/// Создание ВСЕГДА сопровождается EventLog { event_type: achievement_unlocked }.
+/// Набор achievement_type определяется конфигурацией приложения —
+/// не хранится в content-схеме (DATABASE_SPECIFICATION §2.6).
+model Achievement {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  /// Код достижения, например: "first_lesson", "speed_100cpm", "streak_7days"
+  achievementType String @map("achievement_type")
+
+  unlockedAt DateTime @default(now()) @map("unlocked_at")
+
+  /// Произвольные JSON-метаданные (необязательно)
+  metadataJson Json? @map("metadata_json")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes (DATABASE_SPECIFICATION §4 — Achievement)
+  @@index([userId])
+  @@index([achievementType])
+  @@map("achievements")
+  @@schema("app")
+}
+
+// ─── Subscription ─────────────────────────────────────────────────────────────
+
+/// Подписка пользователя. Future-Ready (PROJECT_VISION §13).
+///
+/// Единственный источник истины о биллинге — НЕ User.role.
+/// User.role синхронизируется с активной Subscription на уровне
+/// бизнес-логики Backend, не через DB-constraint.
+///
+/// Мутируемые поля: status, ended_at.
+/// В v1.2 API доступен только для чтения (API_SPECIFICATION v1.2).
+model Subscription {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @map("user_id") @db.Uuid
+
+  plan   SubscriptionPlan
+  status SubscriptionStatus
+
+  startedAt DateTime  @default(now()) @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Indexes (DATABASE_SPECIFICATION §4 — Subscription)
+  @@index([userId])
+  @@index([userId, status])
+  @@map("subscriptions")
+  @@schema("app")
+}
+
+// ─── EventLog ─────────────────────────────────────────────────────────────────
+
+/// Хранилище канонических событий системы. APPEND-ONLY.
+///
+/// ANALYTICS_SPECIFICATION v1.0 §2, DATABASE_SPECIFICATION §2.8, §5.4:
+/// • UPDATE / DELETE запрещены — исторические события неизменны.
+/// • Все FK nullable с onDelete: SetNull — события переживают удаление родителей.
+/// • payload_json содержит поля согласно типу события (см. enum EventType выше).
+///
+/// EventLog — единственный источник событий для Analytics Layer.
+/// Все агрегированные метрики воспроизводимы из EventLog + KeystrokeEvent
+/// (DATABASE_SPECIFICATION §5.3 Reproducibility).
+model EventLog {
+  id        String    @id @default(uuid()) @db.Uuid
+  eventType EventType @map("event_type")
+
+  /// NULL для guest-сессий (start_session/end_session без аккаунта)
+  userId String? @map("user_id") @db.Uuid
+
+  /// NULL для событий, не связанных с конкретной сессией (achievement_unlocked)
+  sessionId String? @map("session_id") @db.Uuid
+
+  /// NULL для событий без попытки (start_session, end_session, certificate_issued)
+  lessonAttemptId String? @map("lesson_attempt_id") @db.Uuid
+
+  /// Структура payload определяется типом события (см. enum EventType).
+  /// Валидация структуры — на уровне бизнес-логики Backend.
+  payloadJson Json @map("payload_json")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations — SetNull: событие сохраняется даже при удалении связанной сущности
+  user          User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  session       TypingSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  lessonAttempt LessonAttempt? @relation(fields: [lessonAttemptId], references: [id], onDelete: SetNull)
+
+  // Indexes (DATABASE_SPECIFICATION §4 — EventLog)
+  @@index([eventType])
+  @@index([userId])
+  @@index([sessionId])
+  @@index([createdAt])
+  @@map("event_logs")
+  @@schema("app")
+}
