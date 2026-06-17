@@ -26,7 +26,6 @@ export declare class SessionsController {
     getSessions(req: any, page?: string, limit?: string): Promise<{
         data: {
             id: string;
-            userId: string | null;
             sessionType: import(".prisma/client").$Enums.SessionType;
             status: import(".prisma/client").$Enums.SessionStatus;
             textId: string;
@@ -35,6 +34,7 @@ export declare class SessionsController {
             endedAt: Date | null;
             cpm: number | null;
             accuracy: number | null;
+            userId: string | null;
         }[];
         total: number;
         page: number;
