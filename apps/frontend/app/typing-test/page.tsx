@@ -204,12 +204,12 @@ export default function TypingTestPage() {
               key={index}
               className={
                 index === typingState.cursor
-                  ? 'border-b-2 border-indigo-500'
-                  : char.status === 'correct'
-                  ? 'text-gray-400'
-                  : char.status === 'incorrect'
-                  ? 'text-red-500 bg-red-50'
-                  : 'text-gray-800'
+                      ? 'border-b-2 border-indigo-500 text-gray-800'
+                     : char.status === 'correct'
+                     ? 'text-gray-400'
+                     : char.status === 'incorrect'
+                     ? 'text-red-500 bg-red-50'
+                     : 'text-gray-800'
               }
             >
               {char.char}
