@@ -8,7 +8,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import * as nodemailer from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -33,17 +32,20 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 часа
 
-    const user = await this.prisma.user.create({
+    await this.prisma.user.create({
       data: {
         email: dto.email,
         nickname: dto.nickname,
         passwordHash,
         emailVerified: false,
+        emailVerificationToken: verificationToken,
+        emailVerificationExpires: verificationExpires,
       },
     });
 
-    await this.sendVerificationEmail(user.email, verificationToken, user.id);
+    await this.sendVerificationEmail(dto.email, verificationToken);
 
     return { message: 'Регистрация успешна. Проверьте email для подтверждения.' };
   }
@@ -51,35 +53,28 @@ export class AuthService {
   // ─── Подтверждение email ──────────────────────────────────
 
   async verifyEmail(token: string) {
-    // Токен хранится как hash в eventLog для безопасности
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
-    const event = await this.prisma.eventLog.findFirst({
+    const user = await this.prisma.user.findFirst({
       where: {
-        eventType: 'start_session',
-        payloadJson: {
-          path: ['verification_token_hash'],
-          equals: tokenHash,
-        },
+        emailVerificationToken: token,
+        emailVerificationExpires: { gt: new Date() },
       },
     });
 
-    if (!event || !event.userId) {
+    if (!user) {
       throw new BadRequestException('Неверный или истёкший токен');
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: event.userId },
-    });
-
-    if (!user) throw new NotFoundException('Пользователь не найден');
     if (user.emailVerified) {
       return { message: 'Email уже подтверждён' };
     }
 
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { emailVerified: true },
+      data: {
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpires: null,
+      },
     });
 
     return { message: 'Email успешно подтверждён' };
@@ -111,7 +106,6 @@ export class AuthService {
   // ─── Выход ────────────────────────────────────────────────
 
   async logout(userId: string) {
-    // Записываем событие выхода — токены инвалидируются на клиенте
     await this.prisma.eventLog.create({
       data: {
         eventType: 'end_session',
@@ -134,7 +128,17 @@ export class AuthService {
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    await this.sendVerificationEmail(user.email, verificationToken, user.id);
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerificationToken: verificationToken,
+        emailVerificationExpires: verificationExpires,
+      },
+    });
+
+    await this.sendVerificationEmail(user.email, verificationToken);
 
     return { message: 'Письмо отправлено повторно' };
   }
@@ -157,24 +161,7 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  private async sendVerificationEmail(
-    email: string,
-    token: string,
-    userId: string,
-  ) {
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-
-    await this.prisma.eventLog.create({
-      data: {
-        eventType: 'start_session',
-        userId,
-        payloadJson: {
-          verification_token_hash: tokenHash,
-          type: 'email_verification',
-        },
-      },
-    });
-
+  private async sendVerificationEmail(email: string, token: string) {
     const verificationUrl = `${this.config.get('app.url')}/verify-email?token=${token}`;
 
     const { Resend } = await import('resend');
@@ -184,9 +171,6 @@ export class AuthService {
       from: 'onboarding@resend.dev',
       to: 'diana.leontyeva97@gmail.com',
       subject: 'Подтвердите ваш email — Тренажёр печати',
-      headers: {
-    'X-Entity-Ref-ID': new Date().getTime().toString(),
-  },
       html: `
         <h2>Добро пожаловать в тренажёр печати!</h2>
         <p>Нажмите на кнопку ниже, чтобы подтвердить ваш email:</p>

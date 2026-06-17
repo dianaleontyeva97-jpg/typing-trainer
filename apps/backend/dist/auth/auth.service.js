@@ -67,42 +67,40 @@ let AuthService = class AuthService {
         }
         const passwordHash = await bcrypt.hash(dto.password, 12);
         const verificationToken = crypto.randomBytes(32).toString('hex');
-        const user = await this.prisma.user.create({
+        const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await this.prisma.user.create({
             data: {
                 email: dto.email,
                 nickname: dto.nickname,
                 passwordHash,
                 emailVerified: false,
+                emailVerificationToken: verificationToken,
+                emailVerificationExpires: verificationExpires,
             },
         });
-        await this.sendVerificationEmail(user.email, verificationToken, user.id);
+        await this.sendVerificationEmail(dto.email, verificationToken);
         return { message: 'Регистрация успешна. Проверьте email для подтверждения.' };
     }
     async verifyEmail(token) {
-        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-        const event = await this.prisma.eventLog.findFirst({
+        const user = await this.prisma.user.findFirst({
             where: {
-                eventType: 'start_session',
-                payloadJson: {
-                    path: ['verification_token_hash'],
-                    equals: tokenHash,
-                },
+                emailVerificationToken: token,
+                emailVerificationExpires: { gt: new Date() },
             },
         });
-        if (!event || !event.userId) {
+        if (!user) {
             throw new common_1.BadRequestException('Неверный или истёкший токен');
         }
-        const user = await this.prisma.user.findUnique({
-            where: { id: event.userId },
-        });
-        if (!user)
-            throw new common_1.NotFoundException('Пользователь не найден');
         if (user.emailVerified) {
             return { message: 'Email уже подтверждён' };
         }
         await this.prisma.user.update({
             where: { id: user.id },
-            data: { emailVerified: true },
+            data: {
+                emailVerified: true,
+                emailVerificationToken: null,
+                emailVerificationExpires: null,
+            },
         });
         return { message: 'Email успешно подтверждён' };
     }
@@ -140,7 +138,15 @@ let AuthService = class AuthService {
             throw new common_1.BadRequestException('Email уже подтверждён');
         }
         const verificationToken = crypto.randomBytes(32).toString('hex');
-        await this.sendVerificationEmail(user.email, verificationToken, user.id);
+        const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await this.prisma.user.update({
+            where: { id: userId },
+            data: {
+                emailVerificationToken: verificationToken,
+                emailVerificationExpires: verificationExpires,
+            },
+        });
+        await this.sendVerificationEmail(user.email, verificationToken);
         return { message: 'Письмо отправлено повторно' };
     }
     async generateTokens(userId, email, role) {
@@ -155,18 +161,7 @@ let AuthService = class AuthService {
         });
         return { accessToken, refreshToken };
     }
-    async sendVerificationEmail(email, token, userId) {
-        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-        await this.prisma.eventLog.create({
-            data: {
-                eventType: 'start_session',
-                userId,
-                payloadJson: {
-                    verification_token_hash: tokenHash,
-                    type: 'email_verification',
-                },
-            },
-        });
+    async sendVerificationEmail(email, token) {
         const verificationUrl = `${this.config.get('app.url')}/verify-email?token=${token}`;
         const { Resend } = await import('resend');
         const resend = new Resend(this.config.get('mail.resendApiKey'));
@@ -174,9 +169,6 @@ let AuthService = class AuthService {
             from: 'onboarding@resend.dev',
             to: 'diana.leontyeva97@gmail.com',
             subject: 'Подтвердите ваш email — Тренажёр печати',
-            headers: {
-                'X-Entity-Ref-ID': new Date().getTime().toString(),
-            },
             html: `
         <h2>Добро пожаловать в тренажёр печати!</h2>
         <p>Нажмите на кнопку ниже, чтобы подтвердить ваш email:</p>

@@ -11,17 +11,20 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Логин:', form);
     setLoading(true);
     setError('');
 
     try {
       const { data } = await api.post('/auth/login', form);
+      console.log('Ответ:', data);
       localStorage.setItem('accessToken', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
       router.push('/dashboard');
     } catch (err: any) {
+      console.log('Ошибка:', err.response?.data);
       setError(err.response?.data?.message || 'Ошибка входа');
     } finally {
       setLoading(false);

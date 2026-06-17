@@ -134,6 +134,8 @@ model User {
   /// bcrypt / argon2. Только необратимый алгоритм хеширования.
   passwordHash  String   @map("password_hash")
   emailVerified Boolean  @default(false) @map("email_verified")
+  emailVerificationToken   String?   @map("email_verification_token")
+  emailVerificationExpires DateTime? @map("email_verification_expires")
   role          UserRole @default(user)
 
   /// Soft ref → content.Language.id (без FK-constraint)
