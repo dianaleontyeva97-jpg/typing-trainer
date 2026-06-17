@@ -182,8 +182,11 @@ export class AuthService {
 
     await resend.emails.send({
       from: 'onboarding@resend.dev',
-      to: email,
+      to: 'diana.leontyeva97@gmail.com',
       subject: 'Подтвердите ваш email — Тренажёр печати',
+      headers: {
+    'X-Entity-Ref-ID': new Date().getTime().toString(),
+  },
       html: `
         <h2>Добро пожаловать в тренажёр печати!</h2>
         <p>Нажмите на кнопку ниже, чтобы подтвердить ваш email:</p>

@@ -11,7 +11,7 @@ exports.default = () => ({
         resendApiKey: process.env.RESEND_API_KEY,
     },
     app: {
-        url: process.env.APP_URL || 'http://localhost:3000',
+        url: process.env.APP_URL || 'http://localhost:3001',
     },
 });
 //# sourceMappingURL=app.config.js.map
