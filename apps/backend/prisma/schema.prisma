@@ -181,7 +181,7 @@ model TypingSession {
   status      SessionStatus @default(active)
 
   /// Soft ref → content.TypingText.id
-  textId   String  @map("text_id") @db.Uuid
+  textId   String  @map("text_id")
 
   /// Soft ref → content.Lesson.id
   /// NULL для guest, NOT NULL для learning (проверка в бизнес-логике Backend).
@@ -229,7 +229,7 @@ model KeystrokeEvent {
   sessionId String @map("session_id") @db.Uuid
 
   /// Soft ref → content.TypingText.id (денормализовано для аналитики)
-  textId String @map("text_id") @db.Uuid
+  textId String @map("text_id")
 
   /// Позиция символа в тексте (0-based)
   positionIndex Int @map("position_index")

@@ -4,6 +4,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { SessionsModule } from './sessions/sessions.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -14,6 +15,7 @@ import appConfig from './config/app.config';
     }),
     PrismaModule,
     AuthModule,
+    SessionsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
