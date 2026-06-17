@@ -106,16 +106,10 @@ export class AuthService {
   // ─── Выход ────────────────────────────────────────────────
 
   async logout(userId: string) {
-    await this.prisma.eventLog.create({
-      data: {
-        eventType: 'end_session',
-        userId,
-        payloadJson: { action: 'logout', timestamp: new Date().toISOString() },
-      },
-    });
-
-    return { message: 'Выход выполнен успешно' };
-  }
+  // Logout не является каноническим событием EventLog —
+  // токены инвалидируются на клиенте (API_SPECIFICATION v1.2, Logout Behavior)
+  return { message: 'Выход выполнен успешно' };
+}
 
   // ─── Повторная отправка письма ────────────────────────────
 

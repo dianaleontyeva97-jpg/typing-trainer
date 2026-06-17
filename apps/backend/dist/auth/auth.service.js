@@ -121,13 +121,6 @@ let AuthService = class AuthService {
         return this.generateTokens(user.id, user.email, user.role);
     }
     async logout(userId) {
-        await this.prisma.eventLog.create({
-            data: {
-                eventType: 'end_session',
-                userId,
-                payloadJson: { action: 'logout', timestamp: new Date().toISOString() },
-            },
-        });
         return { message: 'Выход выполнен успешно' };
     }
     async resendVerification(userId) {
