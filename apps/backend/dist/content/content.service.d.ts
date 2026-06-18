@@ -19,4 +19,51 @@ export declare class ContentService {
         difficulty: string;
         lengthChars: number;
     } | null>;
+    getAllTexts(role: string): Promise<{
+        id: string;
+        title: string;
+        content: string;
+        languageId: string;
+        category: string;
+        difficulty: string;
+        lengthChars: number;
+        isPublished: boolean;
+        createdAt: Date;
+    }[]>;
+    createText(role: string, dto: any): Promise<{
+        id: string;
+        title: string;
+        content: string;
+        languageId: string;
+        category: string;
+        difficulty: string;
+        lengthChars: number;
+        isPublished: boolean;
+        createdAt: Date;
+    }>;
+    togglePublish(role: string, id: string, dto: any): Promise<{
+        id: string;
+        title: string;
+        content: string;
+        languageId: string;
+        category: string;
+        difficulty: string;
+        lengthChars: number;
+        isPublished: boolean;
+        createdAt: Date;
+    }>;
+    updateText(role: string, id: string, dto: any): Promise<{
+        id: string;
+        title: string;
+        content: string;
+        languageId: string;
+        category: string;
+        difficulty: string;
+        lengthChars: number;
+        isPublished: boolean;
+        createdAt: Date;
+    }>;
+    deleteText(role: string, id: string): Promise<{
+        message: string;
+    }>;
 }

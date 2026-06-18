@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ContentController = void 0;
 const common_1 = require("@nestjs/common");
+const passport_1 = require("@nestjs/passport");
 const content_service_1 = require("./content.service");
 let ContentController = class ContentController {
     contentService;
@@ -25,6 +26,18 @@ let ContentController = class ContentController {
     }
     getRandomText(language = 'ru') {
         return this.contentService.getRandomText(language);
+    }
+    getAllTexts(req) {
+        return this.contentService.getAllTexts(req.user.role);
+    }
+    createText(req, dto) {
+        return this.contentService.createText(req.user.role, dto);
+    }
+    updateText(req, id, dto) {
+        return this.contentService.updateText(req.user.role, id, dto);
+    }
+    deleteText(req, id) {
+        return this.contentService.deleteText(req.user.role, id);
     }
 };
 exports.ContentController = ContentController;
@@ -42,6 +55,42 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], ContentController.prototype, "getRandomText", null);
+__decorate([
+    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt')),
+    (0, common_1.Get)('admin'),
+    __param(0, (0, common_1.Request)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], ContentController.prototype, "getAllTexts", null);
+__decorate([
+    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt')),
+    (0, common_1.Post)('admin'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", void 0)
+], ContentController.prototype, "createText", null);
+__decorate([
+    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt')),
+    (0, common_1.Patch)('admin/:id'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, Object]),
+    __metadata("design:returntype", void 0)
+], ContentController.prototype, "updateText", null);
+__decorate([
+    (0, common_1.UseGuards)((0, passport_1.AuthGuard)('jwt')),
+    (0, common_1.Delete)('admin/:id'),
+    __param(0, (0, common_1.Request)()),
+    __param(1, (0, common_1.Param)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], ContentController.prototype, "deleteText", null);
 exports.ContentController = ContentController = __decorate([
     (0, common_1.Controller)('texts'),
     __metadata("design:paramtypes", [content_service_1.ContentService])
