@@ -163,7 +163,7 @@ export class AuthService {
 
     await resend.emails.send({
       from: 'onboarding@resend.dev',
-      to: email,
+      to: 'diana.leontyeva97@gmail.com',
       subject: 'Подтвердите ваш email — Тренажёр печати',
       html: `
         <h2>Добро пожаловать в тренажёр печати!</h2>
