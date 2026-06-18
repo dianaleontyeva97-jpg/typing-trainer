@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SessionsController = void 0;
 const common_1 = require("@nestjs/common");
 const passport_1 = require("@nestjs/passport");
+const optional_jwt_guard_1 = require("../auth/optional-jwt.guard");
 const sessions_service_1 = require("./sessions.service");
 const create_session_dto_1 = require("./dto/create-session.dto");
 const complete_session_dto_1 = require("./dto/complete-session.dto");
@@ -24,11 +25,11 @@ let SessionsController = class SessionsController {
         this.sessionsService = sessionsService;
     }
     async createSession(dto, req) {
-        const userId = req.user?.id;
+        const userId = req.user?.id || null;
         return this.sessionsService.createSession(dto, userId);
     }
     async completeSession(id, dto, req) {
-        const userId = req.user?.id;
+        const userId = req.user?.id || null;
         return this.sessionsService.completeSession(id, dto, userId);
     }
     async getSessions(req, page = '1', limit = '10') {
@@ -37,6 +38,7 @@ let SessionsController = class SessionsController {
 };
 exports.SessionsController = SessionsController;
 __decorate([
+    (0, common_1.UseGuards)(optional_jwt_guard_1.OptionalJwtAuthGuard),
     (0, common_1.Post)(),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, common_1.Request)()),
@@ -45,6 +47,7 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], SessionsController.prototype, "createSession", null);
 __decorate([
+    (0, common_1.UseGuards)(optional_jwt_guard_1.OptionalJwtAuthGuard),
     (0, common_1.Post)(':id/complete'),
     __param(0, (0, common_1.Param)('id')),
     __param(1, (0, common_1.Body)()),

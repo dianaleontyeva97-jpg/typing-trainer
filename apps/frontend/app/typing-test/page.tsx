@@ -8,6 +8,7 @@ import {
   processBackspace,
   TypingState,
 } from '../lib/typing-engine';
+import Link from 'next/link';
 
 const SAMPLE_TEXTS = [
   'Быстрая коричневая лиса прыгает через ленивую собаку.',
@@ -162,6 +163,12 @@ export default function TypingTestPage() {
           >
             Попробовать снова
           </button>
+          <Link
+             href="/dashboard"
+            className="block w-full text-center text-gray-500 py-2 rounded-lg font-medium hover:text-gray-700 transition mt-2"
+            >
+            В личный кабинет
+            </Link>
         </div>
       </div>
     );
