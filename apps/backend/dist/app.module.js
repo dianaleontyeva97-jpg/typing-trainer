@@ -18,6 +18,7 @@ const prisma_module_1 = require("./prisma/prisma.module");
 const auth_module_1 = require("./auth/auth.module");
 const sessions_module_1 = require("./sessions/sessions.module");
 const users_module_1 = require("./users/users.module");
+const content_module_1 = require("./content/content.module");
 const app_config_1 = __importDefault(require("./config/app.config"));
 let AppModule = class AppModule {
 };
@@ -33,6 +34,7 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             sessions_module_1.SessionsModule,
             users_module_1.UsersModule,
+            content_module_1.ContentModule,
         ],
         controllers: [app_controller_1.AppController],
         providers: [app_service_1.AppService],

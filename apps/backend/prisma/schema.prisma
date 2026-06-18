@@ -457,3 +457,32 @@ model EventLog {
   @@map("event_logs")
   @@schema("app")
 }
+// ─── Content Schema ───────────────────────────────────────────────────────────
+// Управляется через Supabase Table Editor (вместо Directus CMS)
+
+model Language {
+  id       String @id @default(uuid()) @db.Uuid
+  code     String @unique // ru, en, be, ua
+  name     String
+  isActive Boolean @default(true) @map("is_active")
+
+  @@map("languages")
+  @@schema("app")
+}
+
+model TypingText {
+  id          String  @id @default(uuid()) @db.Uuid
+  title       String
+  content     String
+  languageId  String  @map("language_id") @db.Uuid
+  category    String  // fiction | non_fiction
+  difficulty  String  // easy | medium | hard
+  lengthChars Int     @map("length_chars")
+  isPublished Boolean @default(false) @map("is_published")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([languageId])
+  @@index([isPublished])
+  @@map("typing_texts")
+  @@schema("app")
+}

@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { UsersModule } from './users/users.module';
+import { ContentModule } from './content/content.module';
 import appConfig from './config/app.config';
 
 @Module({
@@ -18,6 +19,7 @@ import appConfig from './config/app.config';
     AuthModule,
     SessionsModule,
     UsersModule,
+    ContentModule,
   ],
   controllers: [AppController],
   providers: [AppService],
