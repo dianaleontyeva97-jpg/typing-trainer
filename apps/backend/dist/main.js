@@ -11,8 +11,18 @@ async function bootstrap() {
         transform: true,
     }));
     app.enableCors({
-        origin: 'http://localhost:3001',
-        'https://typing-trainer-phi.vercel.app': ,
+        origin: function (origin, callback) {
+            const allowed = [
+                'http://localhost:3001',
+                'https://typing-trainer-phi.vercel.app',
+            ];
+            if (!origin || allowed.includes(origin)) {
+                callback(null, true);
+            }
+            else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
         credentials: true,
     });
     await app.listen(3000);
