@@ -68,8 +68,10 @@ export function processKeystroke(
   const now = new Date();
   const normalizedTyped = normalize(typedChar);
   const expectedChar = state.chars[state.cursor].char;
-  const isCorrect = normalize(expectedChar) === normalizedTyped;
-
+const normalizedExpected = normalize(expectedChar)
+  .replace(/[—–]/g, '-');
+const normalizedInput = normalizedTyped.replace(/[—–]/g, '-');
+const isCorrect = normalizedExpected === normalizedInput;
   // Первый символ — запускаем таймер
   const startedAt = state.startedAt || now;
   const reactionTimeMs = state.lastKeystrokeAt
